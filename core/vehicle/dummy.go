@@ -75,6 +75,18 @@ func (v *dummy) GetRepeatingPlans() []api.RepeatingPlan {
 	return nil
 }
 
+func (v *dummy) GetOneTimePlans() []api.OneTimePlan {
+	return nil
+}
+
+func (v *dummy) SetOneTimePlans(plans []api.OneTimePlan) error {
+	return nil
+}
+
+func (v *dummy) FinishOneTimePlan(ts time.Time) error {
+	return nil
+}
+
 func (v *dummy) GetPlanStrategy() api.PlanStrategy {
 	return api.PlanStrategy{}
 }

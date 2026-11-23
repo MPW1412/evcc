@@ -3,6 +3,8 @@ package vehicle
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/evcc-io/evcc/api"
@@ -213,6 +215,68 @@ func (v *adapter) GetRepeatingPlans() []api.RepeatingPlan {
 	var plans []api.RepeatingPlan
 
 	if err := settings.Json(v.key()+keys.RepeatingPlans, &plans); err != nil {
+		return nil
+	}
+
+	return plans
+}
+
+// oneTimePlansMu serializes changes of the one-time plan list
+var oneTimePlansMu sync.Mutex
+
+func (v *adapter) SetOneTimePlans(plans []api.OneTimePlan) error {
+	oneTimePlansMu.Lock()
+	defer oneTimePlansMu.Unlock()
+
+	return v.setOneTimePlans(plans)
+}
+
+// FinishOneTimePlan removes the one-time plan ending at the given time
+func (v *adapter) FinishOneTimePlan(ts time.Time) error {
+	oneTimePlansMu.Lock()
+	defer oneTimePlansMu.Unlock()
+
+	plans := v.GetOneTimePlans()
+	if i := slices.IndexFunc(plans, func(p api.OneTimePlan) bool { return p.Time.Equal(ts) }); i >= 0 {
+		return v.setOneTimePlans(slices.Delete(plans, i, i+1))
+	}
+	return nil
+}
+
+func (v *adapter) setOneTimePlans(plans []api.OneTimePlan) error {
+	for _, plan := range plans {
+		if plan.Soc < 1 || plan.Soc > 100 {
+			return fmt.Errorf("soc out of range: %d", plan.Soc)
+		}
+	}
+
+	plans = slices.DeleteFunc(plans, func(p api.OneTimePlan) bool {
+		return !p.Time.After(time.Now())
+	})
+
+	slices.SortFunc(plans, func(a, b api.OneTimePlan) int {
+		return a.Time.Compare(b.Time)
+	})
+
+	if err := settings.SetJson(v.key()+keys.OneTimePlans, plans); err != nil {
+		return err
+	}
+
+	v.log.DEBUG.Printf("update one-time plans for %s to: %v", v.name, plans)
+
+	v.publish()
+	v.updatePlan()
+
+	return nil
+}
+
+func (v *adapter) GetOneTimePlans() []api.OneTimePlan {
+	var plans []api.OneTimePlan
+
+	if err := settings.Json(v.key()+keys.OneTimePlans, &plans); err != nil {
+		if !errors.Is(err, settings.ErrNotFound) {
+			v.log.ERROR.Printf("read one-time plans for %s: %v", v.name, err)
+		}
 		return nil
 	}
 

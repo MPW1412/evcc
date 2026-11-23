@@ -67,7 +67,19 @@ func (lp *Loadpoint) finishPlan() {
 	} else if !lp.socBasedPlanning() {
 		lp.setPlanEnergy(time.Time{}, 0)
 	} else if v := lp.GetVehicle(); v != nil {
+		if lp.getPlanId() > 1 {
+			lp.finishOneTimePlan(v)
+			return
+		}
 		vehicle.Settings(lp.log, v).SetPlanSoc(time.Time{}, 0)
+	}
+}
+
+// finishOneTimePlan deletes the current one-time plan from the vehicle
+func (lp *Loadpoint) finishOneTimePlan(v api.Vehicle) {
+	ts, _, _ := lp.nextVehiclePlan()
+	if err := vehicle.Settings(lp.log, v).FinishOneTimePlan(ts); err != nil {
+		lp.log.ERROR.Println("finish plan:", err)
 	}
 }
 
